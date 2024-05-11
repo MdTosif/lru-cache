@@ -17,14 +17,15 @@ type ApiEntry struct {
 }
 
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+	ReadBufferSize:  1024,// read buffer size of the websocket
+	WriteBufferSize: 1024,// write buffer size of websocket
+	CheckOrigin:     func(r *http.Request) bool { return true }, // allow connection from all origin
 }
 
-var cache = lru.NewLRUCache(5, 60*time.Second) // capacity = 2, expiration = 5 seconds
+var cache = lru.NewLRUCache(30, 5*time.Second)
 var clients []*websocket.Conn
 
+// broadcast the cache details to all the connected ws client
 func BroadCast() {
 	var entries []ApiEntry
 	ent, err := cache.GetAll()
@@ -35,6 +36,7 @@ func BroadCast() {
 		entries = append(entries, ApiEntry{Key: v.Key, Value: v.Value, Timeout: v.Timestamp.Add(30 * time.Second).Format("3:04:05 PM")})
 	}
 
+	// send message to the clients
 	for _, client := range clients {
 		client.WriteJSON(entries)
 	}
@@ -50,18 +52,17 @@ func main() {
 	config.AddAllowHeaders("Authorization")
 	config.AllowCredentials = true
 	config.AllowAllOrigins = false
-	// I think you should whitelist a limited origins instead:
-	//  config.AllowAllOrigins = []{"xxxx", "xxxx"}
+	// allowing all origin
 	config.AllowOriginFunc = func(origin string) bool {
 		return true
 	}
 	router.Use(cors.New(config))
 
-	// POST handler for creating a job
+	// POST handler for creating cache
 	router.POST("/cache", func(ctx *gin.Context) {
 		var entry ApiEntry
 
-		// Bind the JSON data from the request body into the job struct
+		// Bind the JSON data from the request body into the cache struct
 		if err := ctx.BindJSON(&entry); err != nil {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -69,15 +70,14 @@ func main() {
 
 		cache.Set(entry.Key, entry.Value)
 
-		// Process the job (e.g., save it to a database)
-		// Here, we simply echo back the received job
+		// send the data to the user
 		ctx.JSON(http.StatusOK, entry)
 	})
 
 	router.GET("/cache", func(ctx *gin.Context) {
 		var entry ApiEntry
 
-		// Bind the JSON data from the request body into the job struct
+		// Bind the JSON data from the request body into the cache struct
 		if err := ctx.BindJSON(&entry); err != nil {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -91,7 +91,7 @@ func main() {
 		}
 
 		entry.Value = value.Value
-		entry.Timeout = (value.Timestamp.Add(30 * time.Second)).Format("2006-01-02 15:04:05")
+		entry.Timeout = (value.Timestamp.Add(30 * time.Second)).Format("3:04:05 PM")
 
 		// Process the job (e.g., save it to a database)
 		// Here, we simply echo back the received job
@@ -123,7 +123,7 @@ func main() {
 		ctx.JSON(http.StatusOK, entries)
 	})
 
-	// WebSocket handler
+	// delete the cache
 	router.DELETE("/cache", func(ctx *gin.Context) {
 		var entry ApiEntry
 
@@ -135,8 +135,6 @@ func main() {
 
 		cache.Delete(entry.Key)
 
-		// Process the job (e.g., save it to a database)
-		// Here, we simply echo back the received job
 		ctx.JSON(http.StatusOK, entry)
 	})
 
@@ -155,7 +153,7 @@ func main() {
 	// Start a goroutine to call the function every second
     go func() {
         for {
-            // Call your function here
+            // broadcasting the message to all user
             BroadCast()
 
             // Wait for one second
