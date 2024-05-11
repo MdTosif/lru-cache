@@ -22,7 +22,7 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true }, // allow connection from all origin
 }
 
-var cache = lru.NewLRUCache(30, 5*time.Second)
+var cache = lru.NewLRUCache(40, 5*time.Second)
 var clients []*websocket.Conn
 
 // broadcast the cache details to all the connected ws client
@@ -33,7 +33,7 @@ func BroadCast() {
 		return
 	}
 	for _, v := range ent {
-		entries = append(entries, ApiEntry{Key: v.Key, Value: v.Value, Timeout: v.Timestamp.Add(30 * time.Second).Format("3:04:05 PM")})
+		entries = append(entries, ApiEntry{Key: v.Key, Value: v.Value, Timeout: v.Timestamp.Add(5 * time.Second).Format("3:04:05 PM")})
 	}
 
 	// send message to the clients
@@ -91,10 +91,8 @@ func main() {
 		}
 
 		entry.Value = value.Value
-		entry.Timeout = (value.Timestamp.Add(30 * time.Second)).Format("3:04:05 PM")
+		entry.Timeout = (value.Timestamp.Add(5 * time.Second)).Format("3:04:05 PM")
 
-		// Process the job (e.g., save it to a database)
-		// Here, we simply echo back the received job
 		ctx.JSON(http.StatusOK, entry)
 	})
 
@@ -115,11 +113,9 @@ func main() {
 
 		for _, v := range ent {
 
-			entries = append(entries, ApiEntry{Key: v.Key, Value: v.Value, Timeout: v.Timestamp.Add(30 * time.Second).Format("3:04:05 PM")})
+			entries = append(entries, ApiEntry{Key: v.Key, Value: v.Value, Timeout: v.Timestamp.Add(5 * time.Second).Format("3:04:05 PM")})
 		}
 
-		// Process the job (e.g., save it to a database)
-		// Here, we simply echo back the received job
 		ctx.JSON(http.StatusOK, entries)
 	})
 
