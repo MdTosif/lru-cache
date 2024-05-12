@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -17,19 +18,30 @@ type ApiEntry struct {
 }
 
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,// read buffer size of the websocket
-	WriteBufferSize: 1024,// write buffer size of websocket
+	ReadBufferSize:  1024,                                       // read buffer size of the websocket
+	WriteBufferSize: 1024,                                       // write buffer size of websocket
 	CheckOrigin:     func(r *http.Request) bool { return true }, // allow connection from all origin
 }
 
 var cache = lru.NewLRUCache(40, 5*time.Second)
 var clients []*websocket.Conn
 
+// remove index from slice
+func RemoveIndex(s []*websocket.Conn, index int) []*websocket.Conn {
+	fmt.Println("deleting client")
+	return append(s[:index], s[index+1:]...)
+}
+
 // broadcast the cache details to all the connected ws client
 func BroadCast() {
 	var entries []ApiEntry
+
+	if len(clients) <= 0 {
+		return
+	}
+
 	ent, err := cache.GetAll()
-	if err != nil{
+	if err != nil {
 		return
 	}
 	for _, v := range ent {
@@ -71,7 +83,7 @@ func main() {
 		cache.Set(entry.Key, entry.Value)
 
 		// send the data to the user
-		ctx.JSON(http.StatusOK, entry)
+		ctx.JSON(http.StatusOK, gin.H{"Msg": entry.Key + " get added successfully"})
 	})
 
 	router.GET("/cache", func(ctx *gin.Context) {
@@ -129,9 +141,14 @@ func main() {
 			return
 		}
 
-		cache.Delete(entry.Key)
+		err := cache.Delete(entry.Key)
 
-		ctx.JSON(http.StatusOK, entry)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		ctx.JSON(http.StatusOK, gin.H{"Msg": entry.Key + " get deleted successfully"})
 	})
 
 	router.Any("/ws", func(ctx *gin.Context) {
@@ -143,19 +160,40 @@ func main() {
 		}
 
 		clients = append(clients, conn)
+
+		conn.SetCloseHandler(func(code int, text string) error {
+			for i, client := range clients {
+				fmt.Println(client == conn)
+				if client == conn {
+					clients = RemoveIndex(clients, i)
+					break
+				}
+			}
+			fmt.Println("client closed")
+			return nil
+		})
+
+		go func() {
+			for {
+				if _, _, err := conn.NextReader(); err != nil {
+					conn.Close()
+					break
+				}
+			}
+		}()
+
 	})
 
-
 	// Start a goroutine to call the function every second
-    go func() {
-        for {
-            // broadcasting the message to all user
-            BroadCast()
+	go func() {
+		for {
+			// broadcasting the message to all user
+			BroadCast()
 
-            // Wait for one second
-            time.Sleep(time.Second)
-        }
-    }()
+			// Wait for one second
+			time.Sleep(time.Second)
+		}
+	}()
 	// Run the server on port 8080
 	router.Run(":8080")
 
