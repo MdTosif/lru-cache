@@ -74,7 +74,7 @@ func (lru *LRUCache) GetAll() ([]entry, error) {
 		f = f.Next
 
 	}
-	println(len(entries))
+	// println(len(entries))
 	return entries, nil
 
 }

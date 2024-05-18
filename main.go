@@ -192,14 +192,6 @@ func main() {
 		}
 	}()
 
-	// Start an HTTP server to expose the pprof handlers.
-    go func() {
-        fmt.Println("Starting pprof server at :6060")
-        if err := http.ListenAndServe(":6060", nil); err != nil {
-            fmt.Printf("pprof server failed: %v\n", err)
-        }
-    }()
-	
 	// Run the server on port 8080
 	router.Run(":8080")
 
