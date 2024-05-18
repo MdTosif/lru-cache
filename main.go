@@ -14,7 +14,8 @@ import (
 type ApiEntry struct {
 	Key     string `json:"key"`
 	Value   string `json:"value"`
-	Timeout string `json:"timeout"`
+	Timeout int `json:"timeout"`
+	Expires string `json:"expiresAt"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -23,7 +24,7 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true }, // allow connection from all origin
 }
 
-var cache = lru.NewLRUCache(40, 5*time.Second)
+var cache = lru.NewLRUCache(40)
 var clients []*websocket.Conn
 
 // remove index from slice
@@ -45,7 +46,7 @@ func BroadCast() {
 		return
 	}
 	for _, v := range ent {
-		entries = append(entries, ApiEntry{Key: v.Key, Value: v.Value, Timeout: v.Timestamp.Add(5 * time.Second).Format("3:04:05 PM")})
+		entries = append(entries, ApiEntry{Key: v.Key, Value: v.Value, Expires: v.Timestamp.Add(5 * time.Second).Format("3:04:05 PM")})
 	}
 
 	// send message to the clients
@@ -80,7 +81,7 @@ func main() {
 			return
 		}
 
-		cache.Set(entry.Key, entry.Value)
+		cache.Set(entry.Key, entry.Value, time.Duration(entry.Timeout) * time.Second)
 
 		// send the data to the user
 		ctx.JSON(http.StatusOK, gin.H{"Msg": entry.Key + " get added successfully"})
@@ -103,7 +104,7 @@ func main() {
 		}
 
 		entry.Value = value.Value
-		entry.Timeout = (value.Timestamp.Add(5 * time.Second)).Format("3:04:05 PM")
+		entry.Expires = (value.Timestamp.Add(5 * time.Second)).Format("3:04:05 PM")
 
 		ctx.JSON(http.StatusOK, entry)
 	})
@@ -125,7 +126,7 @@ func main() {
 
 		for _, v := range ent {
 
-			entries = append(entries, ApiEntry{Key: v.Key, Value: v.Value, Timeout: v.Timestamp.Add(5 * time.Second).Format("3:04:05 PM")})
+			entries = append(entries, ApiEntry{Key: v.Key, Value: v.Value, Expires: v.Timestamp.Add(5 * time.Second).Format("3:04:05 PM")})
 		}
 
 		ctx.JSON(http.StatusOK, entries)

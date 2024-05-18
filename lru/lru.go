@@ -23,12 +23,11 @@ type LRUCache struct {
 }
 
 // initialize the lru cache
-func NewLRUCache(capacity int, expiration time.Duration) *LRUCache {
+func NewLRUCache(capacity int) *LRUCache {
 	return &LRUCache{
 		capacity:   capacity,
 		cache:      make(map[string]*list.Element),
 		eviction:   list.New(),
-		expiration: expiration,
 	}
 }
 
@@ -79,22 +78,24 @@ func (lru *LRUCache) GetAll() ([]*entry, error) {
 }
 
 // set key and value in cache
-func (lru *LRUCache) Set(key string, value string) {
+func (lru *LRUCache) Set(key string, value string, expireTime time.Duration) {
 	lru.mutex.Lock()
 	defer lru.mutex.Unlock()
+
+	expireTimestamp := time.Now().Add(expireTime)
 
 	// if key exist update the value and timestamp
 	if element, found := lru.cache[key]; found {
 		lru.eviction.MoveToFront(element)
 		element.Value.(*entry).Value = value
-		element.Value.(*entry).Timestamp = time.Now()
+		element.Value.(*entry).Timestamp = expireTimestamp
 	} else {
 		// evicting the oldest cache in list if cache have more than capacity of the lru
 		if len(lru.cache) >= lru.capacity {
 			lru.evictOldest()
 		}
 		// move it in the front of the cache list
-		element := lru.eviction.PushFront(&entry{Key: key, Value: value, Timestamp: time.Now()})
+		element := lru.eviction.PushFront(&entry{Key: key, Value: value, Timestamp: expireTimestamp})
 		lru.cache[key] = element
 	}
 }
@@ -132,7 +133,7 @@ func (lru *LRUCache) evictOldest() {
 
 // check if cache is expired
 func (lru *LRUCache) isExpired(e *entry) bool {
-	return time.Since(e.Timestamp) > lru.expiration
+	return e.Timestamp.Before(time.Now())
 }
 
 // delete the key from lru
