@@ -1,11 +1,12 @@
 package lru
 
 import (
-	"container/list"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
+
+	linkedlist "github.com/mdtosif/lru-go/lru/linked-list"
 )
 
 type entry struct {
@@ -15,19 +16,18 @@ type entry struct {
 }
 
 type LRUCache struct {
-	capacity   int                      // if the number of the cache item exceed capacity, it will delete the oldest elements
-	cache      map[string]*list.Element // pointer of the linked list
-	eviction   *list.List               // list of the elements with the new to oldest accessed item
-	expiration time.Duration            // duration after the lru cache will get deleted
-	mutex      sync.Mutex               // mutex to use lock resource
+	capacity int                                   // if the number of the cache item exceed capacity, it will delete the oldest elements
+	cache    map[string]*linkedlist.Element[entry] // pointer of the linked list
+	eviction *linkedlist.DoublyLiknedList[entry]   // list of the elements with the new to oldest accessed item
+	mutex    sync.Mutex                            // mutex to use lock resource
 }
 
 // initialize the lru cache
 func NewLRUCache(capacity int) *LRUCache {
 	return &LRUCache{
-		capacity:   capacity,
-		cache:      make(map[string]*list.Element),
-		eviction:   list.New(),
+		capacity: capacity,
+		cache:    make(map[string]*linkedlist.Element[entry]),
+		eviction: linkedlist.NewDll[entry](),
 	}
 }
 
@@ -39,25 +39,25 @@ func (lru *LRUCache) Get(key string) (*entry, error) {
 	// check if key is in the cache
 	if element, found := lru.cache[key]; found {
 		// check if it is expired, if yes delete it from cache
-		if lru.isExpired(element.Value.(*entry)) {
+		if lru.isExpired(&element.Value) {
 			lru.removeKey(element, key)
 			return nil, errors.New("key is expired")
 		}
 		// move the key to front of linked list
 		lru.eviction.MoveToFront(element)
-		return element.Value.(*entry), nil
+		return &element.Value, nil
 	}
 	return nil, errors.New("key doesn't exist")
 }
 
 // get all the keys, value & timestamp cache
-func (lru *LRUCache) GetAll() ([]*entry, error) {
+func (lru *LRUCache) GetAll() ([]entry, error) {
 	lru.mutex.Lock()
 	defer lru.mutex.Unlock()
 
-	var entries []*entry
+	var entries []entry
 
-	f := lru.eviction.Front()
+	f := lru.eviction.Head
 
 	// going through the linked list of cache and get the value
 	for {
@@ -65,14 +65,16 @@ func (lru *LRUCache) GetAll() ([]*entry, error) {
 			break
 		}
 		// if it is expired remove it from cache & linked list
-		if lru.isExpired(f.Value.(*entry)) {
-			lru.removeKey(f, f.Value.(*entry).Key)
+		if lru.isExpired(&f.Value) {
+			lru.removeKey(f, f.Value.Key)
 		} else {
 			// if not expired return it
-			entries = append(entries, f.Value.(*entry))
+			entries = append(entries, f.Value)
 		}
-		f = f.Next()
+		f = f.Next
+
 	}
+	println(len(entries))
 	return entries, nil
 
 }
@@ -87,16 +89,18 @@ func (lru *LRUCache) Set(key string, value string, expireTime time.Duration) {
 	// if key exist update the value and timestamp
 	if element, found := lru.cache[key]; found {
 		lru.eviction.MoveToFront(element)
-		element.Value.(*entry).Value = value
-		element.Value.(*entry).Timestamp = expireTimestamp
+		element.Value.Value = value
+		element.Value.Timestamp = expireTimestamp
 	} else {
 		// evicting the oldest cache in list if cache have more than capacity of the lru
 		if len(lru.cache) >= lru.capacity {
 			lru.evictOldest()
 		}
+
 		// move it in the front of the cache list
-		element := lru.eviction.PushFront(&entry{Key: key, Value: value, Timestamp: expireTimestamp})
-		lru.cache[key] = element
+		lru.eviction.PushFront(&linkedlist.Element[entry]{Value: entry{Key: key, Value: value, Timestamp: expireTimestamp}})
+		lru.cache[key] = lru.eviction.Head
+
 	}
 }
 
@@ -107,12 +111,11 @@ func (lru *LRUCache) Delete(key string) error {
 
 	if element, found := lru.cache[key]; found {
 		// check if it is expired, if yes delete it from cache
-		if lru.isExpired(element.Value.(*entry)) {
+		if lru.isExpired(&element.Value) {
 			lru.removeKey(element, key)
 			return errors.New("key is expired")
 		} else {
 			lru.removeKey(element, key)
-
 		}
 	} else {
 		return errors.New("key not found")
@@ -123,11 +126,11 @@ func (lru *LRUCache) Delete(key string) error {
 
 // evict the oldest cache
 func (lru *LRUCache) evictOldest() {
-	if lru.eviction.Len() == 0 {
+	if lru.eviction == nil {
 		return
 	}
-	element := lru.eviction.Back()
-	delete(lru.cache, element.Value.(*entry).Key)
+	element := lru.eviction.Tail
+	delete(lru.cache, element.Value.Key)
 	lru.eviction.Remove(element)
 }
 
@@ -137,8 +140,8 @@ func (lru *LRUCache) isExpired(e *entry) bool {
 }
 
 // delete the key from lru
-func (lru *LRUCache) removeKey(element *list.Element, key string) {
+func (lru *LRUCache) removeKey(element *linkedlist.Element[entry], key string) {
 	lru.eviction.Remove(element)
 	delete(lru.cache, key)
-	fmt.Println(key+" got deleted")
+	fmt.Println(key + " got deleted")
 }

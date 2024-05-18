@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -14,7 +15,7 @@ import (
 type ApiEntry struct {
 	Key     string `json:"key"`
 	Value   string `json:"value"`
-	Timeout int `json:"timeout"`
+	Timeout int    `json:"timeout"`
 	Expires string `json:"expiresAt"`
 }
 
@@ -81,30 +82,25 @@ func main() {
 			return
 		}
 
-		cache.Set(entry.Key, entry.Value, time.Duration(entry.Timeout) * time.Second)
+		cache.Set(entry.Key, entry.Value, time.Duration(entry.Timeout)*time.Second)
 
 		// send the data to the user
 		ctx.JSON(http.StatusOK, gin.H{"Msg": entry.Key + " get added successfully"})
 	})
 
-	router.GET("/cache", func(ctx *gin.Context) {
-		var entry ApiEntry
+	router.GET("/cache/:key", func(ctx *gin.Context) {
+		key := ctx.Param("key")
 
-		// Bind the JSON data from the request body into the cache struct
-		if err := ctx.BindJSON(&entry); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		value, err := cache.Get(entry.Key)
+		value, err := cache.Get(key)
 
 		if err != nil {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 
+		var entry ApiEntry
 		entry.Value = value.Value
-		entry.Expires = (value.Timestamp.Add(5 * time.Second)).Format("3:04:05 PM")
+		entry.Expires = value.Timestamp.Format("3:04:05 PM")
 
 		ctx.JSON(http.StatusOK, entry)
 	})
@@ -195,6 +191,15 @@ func main() {
 			time.Sleep(time.Second)
 		}
 	}()
+
+	// Start an HTTP server to expose the pprof handlers.
+    go func() {
+        fmt.Println("Starting pprof server at :6060")
+        if err := http.ListenAndServe(":6060", nil); err != nil {
+            fmt.Printf("pprof server failed: %v\n", err)
+        }
+    }()
+	
 	// Run the server on port 8080
 	router.Run(":8080")
 
